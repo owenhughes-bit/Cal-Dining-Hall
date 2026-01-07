@@ -1,0 +1,49 @@
+[Day 1] - started off small and created the python file and notes file
+
+[Day 2]
+URL: https://dining.berkeley.edu/menus/
+I inspsected the page and found where the menu items are stored. The class name seems to be recip and then a list of the allergens
+Next, I will try to extract the data from the site
+
+[Day 3]
+I installed requests and BeautifulSoup which extract website data and parse items
+I connected to Cal Dining (status 200)
+I printed the title using BeautifulSoup
+I Saved HTML file for future parsing
+
+[Day 4]
+I created a nested list that includes the dining hall location, time of day, categories, and food items
+Put the nested list in a function get_menu
+Created functions to get certain attributes of the list, like the dining hall or the category
+Realized the code was slow and looked into cacheing the code, like I learned in CS 61a
+
+[Day 5]
+Continued to look into cacheing
+Implemented a cacheing system using a dictionary that contains the menu and a timestamp
+The timestamp ensures that the menu is refreshed every hour, although this can change
+Moved the main scraper code into the function caching_menu
+get_menu now checks if the menu needs to be re-scraped and then prints it
+This reduced the time it took to generate the many enormously after the first time
+
+[Day 6]
+Encountered the problem that the nutrient information cannot be scraped regularly due to javascript popups
+Researched Selenium, which creates a zombie chrome window that triggers the popups and gives you tuhe full code
+Implemented Selenium in the file selenium_dump.py
+This file will not be in the final code, but it was to learn selenium and see how its HTML was different than beautifulsoup
+
+[Day 7]
+Incorporating Selenium into my scraper to get the code WITH popups
+Came up with caching problem - it was running the zombie window twice when I ran it twice instead of caching it the first time so it doesn't have to run twice.
+It turns out that caching doesn't save when you run the whole program twice, you would need a json save file to do that.
+However, when I develop a UI the program will only run once and the chaching WILL work
+
+[Day 8]
+BIG SETBACK. Should've seen it before now, but Selenium DOES NOT WORK.
+Selenium worked, but the caloric information was hidden behind an admin-ajax.php which selenium couldn't read. Selenium is now useless (at least I got to learn it)
+Got nutrition info through get_recipe_nutrition()
+
+[Day 9]
+Another big setback. The berkeley menu site is no longer containing food items for a week. This is bad as I am currently working on the project
+In response, I created a fake nutrition json file and function to mimic the real API until I get the file back in a week.
+To mimic the dining hall/food items, I temporarily used the html of the menu site from a previous day
+All the backend things have been completed, time to move onto the frontend stuff.
