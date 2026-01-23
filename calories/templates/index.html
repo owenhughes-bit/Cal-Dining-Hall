@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>  <!-- head is not visible on the page, stores information liek the title shown in browser tabs and links to metadata. Like settings -->
+        <meta charset="UTF-8"> <!-- Tells the browser how to decode/interpret text characters. UTF is a character encoding that supports nearly everything-->
+        <meta name="viewport" content="width=device-width, initial-scale = 1.0"> <!-- Viewport is the visible area of a webpage in teh browser window. name = "viewport" states instructions will be given to viewport and content is the instructions given.-->
+        <title>Cal Dining Nutrition</title>
+        <link rel="stylesheet" href="{{url_for('static', filename='styles.css')}}"> <!-- Links styles.css to the file to style the page-->
+        <!-- Link - links it. rel = - tells program styles.css is a stylesheet. href= - where to find the stylesheet-->
+        <!-- statement inside href is a Jinja2 suntax (flask's remplating language). THis stuff in between the double brackets says "Executre this python code and insert the result". URL for just generates the correct URL-->
+    </head>
+    <body> <!-- Contains ALL visible content-->
+        <div class="container"> <!-- Div is just an organizer. Everything below it is just in the category "container"-->
+            <header> <!-- Does nothing for the code. Only signifies that this is the header of the page-->
+                <h1> CALories </h1> <!-- H1 is the largest text, main headers-->
+                <p class="subtitle">UC Berkeley Dining Hall Nutrition Tracker</p> <!-- <p> creates a paragraph of text. Class = "subtitle" is used so that hte CSS code can target it in the future-->
+            </header>
+
+            <!--Dropdowns for selecting dining hall, meal period-->
+            <div class="selector-container">
+                <!-- Dining Hall Selector -->
+                <div class="selector-group">
+                    <label for="hall-select">Dining Hall</label> <!-- Label is just text, but it is text for watever uses the for= [text]. It makes it so that when you click the label it selects the dropdown too.-->
+                    <select id="hall-select" disabled> <!-- Select is a dropdown menu. id connects to label and makes it so javascript can find it. Disable makes it so you cannot interact until JS says so-->
+                        <option value=""> Loading...</option> <!-- Option is an individual choice in the dropdown. Value is what gets sent to your code when selected. The text is what the user sees. Text and value will get updated with JS-->
+                    </select>
+                </div>
+                
+                <!-- Period Selector -->
+                 <div class="selector-group">
+                    <label for="period-select">Meal Period</label>
+                    <select id="period-select" disabled>
+                        <option value="">Select a hall first</option>
+                    </select>
+                 </div>
+            </div>
+        
+            <!-- Food Selection Area (Not Dropdowns)-->
+            <div id="food-selection" class="food-selection-container hidden"> <!-- The ID allows JS to identify this div. "hidden" inside of the class connects to CSS which means this code will nto be displayed-->
+                <div class="search-bar">
+                    <input type="text" id="search-input" placeholder="🔍 Search foods..."> <!-- User can type text, id is an identifier. Placeholder is what is shown before typing.-->
+                    <span id="food-count" class="food-count"></span> <!-- Span is used to update text dynamically. Currently, there is nothing inside of the span, but the # of foods will go in there-->
+                </div>
+
+                <div id="food-list" class = "food-list">
+                    <!-- Populate this with checkboxes using javascript-->
+                </div>
+                
+                <div class="action-bar">
+                    <button id="calculate-btn" class="calculate-btn" disabled>Calculate Nutrition</button> <!-- Creates the calculate button that will fetch nutrition information. Starts disabled. -->
+                    <button id="clear-btn" class="clear-btn">Clear Selections</button> <!-- Creates the clear selection button, doesn't start disabled. -->
+                </div>
+            </div>
+        
+            <!-- Loading Indicator-->
+            <div id="loading" class="loading hidden"> <!-- WIll control padding, background, border-radius, and text-align through CSS -->
+                <div class="spinner"></div> <!-- Will control size, border, and animation through CSS-->
+                <p>Calculating nutrition...</p>
+            </div>
+        
+            <!-- Display all results-->
+            <div id="results" class="results-container hidden">
+                <h2>Your Meal Summary</h2>
+
+                <div id="selected-items" class="selected-items">
+                    <!-- Will show what you selected-->
+                </div>
+                <div id="total-nutrition" class="total-nutrition">
+                    <h3> Total Nutrition</h3>
+                    <div id="nutrition-grid"></div> <!-- Empty inner function so that JS doesn't have to be careful not to remove things like the H3. -->
+                </div>
+            
+                <div id="combined-allergens" class="allergens hidden">
+                    <h3>Combined Allergens</h3>
+                    <p id="allergens-list"></p>
+                </div>
+            </div>
+            
+            <footer>
+                <p>Data from UC Berkeley Dining | Data found at https://dining.berkeley.edu/menus/</p>
+            </footer>
+        </div>
+    
+        <script> //Starts JavaScript
+            //STATE MANAGEMENT: Stores the app's current state (what the user has selected)
+            let currentSelection = { //let creates a variable whose value can change later. Current selection is like a python dictionary
+                hall: null, //Would be updated by something like currentSelection.hall = "Crossroads";
+                period: null,
+                allFoods:[]
+            }; //Currently, at the beginning of the code, nothing has been selected or retrieved
+
+            //ELEMENTS
+            const hallSelect = document.getElementByID('hall-select'); //const creates variable that can't be reassigned. Document is our HTML. This code gets the Elements by ID.
+            const periodSelect = document.getElementById('period-select');
+            const foodSelection = document.getElementById('food-selection');
+            const searchInput = document.getElementById('search-input');
+            const foodList = document.getElementById('food-list');
+            const foodCount = document.getElementById('food-count');
+            const calculateBtn = document.getElementById('calculate-btn');
+            const clearBtn = document.getElementById('clear-btn');
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+
+            //HELPER FUNCTION: FILLS THE DROPDOWN w OPTIONS
+            function populateSelect(selectElement, items, placeholder){ //SelectElement: the <select> HTML element, items: array of strings: placeholder is text like "Choose a hall"
+                selectElement.innerHTML = `<option value="">${placeholder}</option>`; //Clears everything inside the dropdown (by resetting the innerHTML) and adds one option with an empty value and placeholder text
+                items.forEach(function(item) { //Same as for item in items
+                    const option = document.createElement('option'); //Creates HTML element option
+                    option.value = item; //Sets the vlaue attribute. What JS sees when you select it
+                    option.textContent = item; //What the user visually sees in the dropdown. The text, but not the item.
+                    selectElement.appendChild(option); //Adds the option to the dropdown
+                });
+            }
+
+            //LOAD DINING HALLS
+            async function init() { //init initializes the page by fetching dining halls from the Flask API to populate the first dropdown
+                try{ //Try this code, if it fails, catch the error
+                    const response = await fetch('/api/halls'); //Fetch makes an HTTP GET request to the flask API. similar to this code: response = requests.get('http://localhost:5000/api/halls'). Returns JSON & browser recieves response
+                    const data = await response.json(); //converts response from JSON to JavaScript object.
+
+                    if (data.error) { //data.error is true if the api_halls() function return an errror. alrt shows a browser popup with the error.
+                        alert('Error loading dining halls: ' + data.error);
+                        return;
+                    }
+
+                    populateSelect(hallSelect, data.halls, 'Select a dining hall');
+                    hallSelect.disabled = false //enables the dropdown
+
+                } catch (error){ //Catches any errors that happened in the try block. catch is similar to except in python
+                    console.error('Error:', error);
+                    alert('Failed to load dining halls');
+                }
+            }
+
+            // HALL SELECTION
+            hallSelect.addEventListener('change', async (e) => { //addEventListener tells the code to listen for "change" to happen. async means the function will use await later. => is an arrow signifying its a function.
+                const hall = e.target.value; //e.target = the element that triggered the event. (the <select>). .value is the selected option's value
+                currentSelection.hall = hall; //Updates the state management dictionary at the beginning of the JS to remember the values
+
+                periodSelect.disabled = True //For when the user changes halls after already selecting a period.
+                foodSelection.classList.add('hidden'); //If halls change
+                results.classList.add('hidden'); //If halls change
+
+                if (!hall) return; //If the user didn't choose a hall, stop here (means the user selected the placeholder)
+
+                try{
+                    const response = await fetch(`/api/periods?hall=${encodeURIComponent(hall)}`); //Fetch says get this URL and give response. EncodeURIComponent makes sure the hall value is sage for a URL (encodes spaces and special objects not in URLs)
+                    const data = await response.json();
+
+                    if (data.error) {
+                        alert('Error loading periods: ' + data.error);
+                        return;
+                    }
+
+                    populateSelect(periodSelect, data.periods, 'Select a meal period');
+                    periodSelect.disabled = false;
+
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Failed to load periods');
+                }
+            });
+
+            //PERIOD SELECTION AND FOOD LOADING
+            periodSelect.addEventListener('change', async (e) => { // (e) is the even object and the element that triggered the event
+                const period = e.target.value;
+                currentSelection.period = period;
+
+                foodSelection.classList.add('hidden'); //IF period is changed
+                results.classList.add('hidden'); //IF period is changed
+
+                if (!period) return;
+
+                //Show loading while fetching the foods
+                foodList.innerHTML = '<div class="loading-foods">Loading foods...</div>';
+                foodSelection.classList.remove('hidden'); //Makes the foodSelection list visible
+
+                try {
+                    const response = await fetch(`1/api/foods?hall=${encodeURIComponent(currentSelection.hall)}&period=${encodeURIComponent(period)}`);
+                    const data = await response.json();
+
+                    if (data.error) {
+                        alert('Error loading foods: ' + data.error);
+                        return;
+                    }
+
+                    currentSelection.allFoods = data.foods;
+                    displayFoodList(data.foods);
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert("Failed to load food items");
+                }
+            });
+
+            //DISPLAY FOOD LIST WITH CHECKBOXES
+            function displayFoodList(foods) { //foods is an array of food objects
+                foodList.innerHTML = ''; //resets the foodList if changed and removes loading foods...
+                
+                if (foods.length == 0) {
+                    foodList.innerHTML = '<div class="no-foods">No foods available for this period.</div>';
+                    return;
+                }
+
+                foods.forEach(food => { //same as for food in foods
+                    const item = document.createElement('div'); //Creates div element
+                    item.className = 'food-item'; //Sets the class attribute of the element
+                    item.dataset.foodName = food.name.toLowerCase(); //dataset is used to store custom data on elements. Creates the element data-food-name. Lowercase ensures unsensitive capitalization in your search.
+                    item.dataset.category = food.category.toLowerCase(); //Creates class = fooditem data-food-name = cheeze pizza data-category = pizza inside of your div statement. You can have many divs with the same data element.
+
+                    item.innerHTML=`
+                        <label class="food-label">
+                            <input type="checkbox" class="food-checkbox"
+                                data-name="${food.name}"
+                                data-category="${food.category}"
+                                data-hall="${food.hall}"
+                                data-period="${food.period}">
+                            <span class="food-name">${food.name}</span>
+                            <span class="category-tag">${food.category}</span>
+                        </label>
+                        <div class="serving-control">
+                            <input type="number" class="serving-input"
+                                value="1" min="0.25" max="10" step="0.1" disabled>
+                            <span class="serving-label">servings</span>
+                        </div>
+                    `;
+                    
+                    foodList.appenChild(item); //Adds this food to do foodlist
+                });
+
+                updateFoodCount(foods.length);
+                attachFoodListeners(); //Gives behavior to each checkbox. When a checkbox is checked it enables its serving input and enables the calculate Nutrition button
+            }
+
+            //GIVE BEHAVIOR TO CHECKBOXES
+            function attachFoodListeners() {
+                const checkboxes = document.querySelectorAll('.food-checkbox'); //Finds all elements that have the class "food-checkbox" and stores them in the variable checkboxes.
+
+                checkboxes.forEach(checkbox => { //for checkbox in checkboxes
+                    checkbox.addEventListener('change', (e) => { //Listens for a change on the checkbox
+                        const servingInput = e.target.closest('.food-item').querySelector('.serving-input'); //closest walks up the HTML tree until it reachest the nearest parent with class "food-item". .query finds hte serving-input for the clicked food.
+                        servingInput.disabled = !e.target.checked; //Is checkbox is checked, then the serving input is enabled. (diabled is turned to false)
+
+                        const anyChecked = document.querySelectorAll('.food-checkbox:checked)').length >0; //Looks through the entire page for elements that have class food-checkbox and are currently checked. If there are. anychecked is true.
+                        calculateBtn.disabled = !anyChecked;
+                    });
+                });
+            }
+
+            //SEARCH BAR (FILTERING FOODS)
+            searchInput.addEventLIstener('input', (e) => { //If there is input into the search bar, this function will run
+                const searchTerm = e.target.value.toLowerCase(); //The value of what the user typed. Lowercase so that it is case insensitive
+                const foodItems = document.querySelectorAll('.food-item') //Just gets the lsit of all the food items
+                let visibleCount = 0; //Will count the number of foods currently visible after typing in a keyword
+
+                foodItems.forEach(item => {
+                    const foodName = item.dataset.foodName;
+                    const category = item.dataset.category;
+
+                    if(foodName.includes(searchTerm) || category.includes(searchTerm)) { //includes is true if searchTerm is ANYWHERE inside of foodName or inside of its category.
+                        item.style.display = 'flex'; //sytle is an inline CSS style which overrides the external CSS. flex makes the element visible and enables flexboc layout (children in rows and columns)
+                        visibleCount++;
+                    } else {
+                        item.style.display = 'none';  //opposite of flex, removes the element and makes it completely gone
+                    }
+                });
+
+                updateFoodCount(visibleCount, currentSelection.allFoods.length);
+            });
+
+            //FOOD COUNT DISPLAY
+            function updateFoodCount(visible, total) {
+                if (total === undefined) { //The === checks both that the Value and Type match exactly
+                    foodCount.textContent = `${visible} items`; //textContent sets or gets the text isnide an element. Is si thie thing that goes between the <span>...</span>
+                } else {
+                    foodCount.textContent = `${visible} of ${total} items`;
+                }
+            }
+        </script>
+    </body>
+</html>
