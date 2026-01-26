@@ -89,7 +89,7 @@
             }; //Currently, at the beginning of the code, nothing has been selected or retrieved
 
             //ELEMENTS
-            const hallSelect = document.getElementByID('hall-select'); //const creates variable that can't be reassigned. Document is our HTML. This code gets the Elements by ID.
+            const hallSelect = document.getElementById('hall-select'); //const creates variable that can't be reassigned. Document is our HTML. This code gets the Elements by ID.
             const periodSelect = document.getElementById('period-select');
             const foodSelection = document.getElementById('food-selection');
             const searchInput = document.getElementById('search-input');
@@ -136,7 +136,7 @@
                 const hall = e.target.value; //e.target = the element that triggered the event. (the <select>). .value is the selected option's value
                 currentSelection.hall = hall; //Updates the state management dictionary at the beginning of the JS to remember the values
 
-                periodSelect.disabled = True //For when the user changes halls after already selecting a period.
+                periodSelect.disabled = true //For when the user changes halls after already selecting a period.
                 foodSelection.classList.add('hidden'); //If halls change
                 results.classList.add('hidden'); //If halls change
 
@@ -175,7 +175,7 @@
                 foodSelection.classList.remove('hidden'); //Makes the foodSelection list visible
 
                 try {
-                    const response = await fetch(`1/api/foods?hall=${encodeURIComponent(currentSelection.hall)}&period=${encodeURIComponent(period)}`);
+                    const response = await fetch(`/api/foods?hall=${encodeURIComponent(currentSelection.hall)}&period=${encodeURIComponent(period)}`);
                     const data = await response.json();
 
                     if (data.error) {
@@ -223,7 +223,7 @@
                         </div>
                     `;
                     
-                    foodList.appenChild(item); //Adds this food to do foodlist
+                    foodList.appendChild(item); //Adds this food to do foodlist
                 });
 
                 updateFoodCount(foods.length);
@@ -239,14 +239,14 @@
                         const servingInput = e.target.closest('.food-item').querySelector('.serving-input'); //closest walks up the HTML tree until it reachest the nearest parent with class "food-item". .query finds hte serving-input for the clicked food.
                         servingInput.disabled = !e.target.checked; //Is checkbox is checked, then the serving input is enabled. (diabled is turned to false)
 
-                        const anyChecked = document.querySelectorAll('.food-checkbox:checked)').length >0; //Looks through the entire page for elements that have class food-checkbox and are currently checked. If there are. anychecked is true.
+                        const anyChecked = document.querySelectorAll('.food-checkbox:checked').length >0; //Looks through the entire page for elements that have class food-checkbox and are currently checked. If there are. anychecked is true.
                         calculateBtn.disabled = !anyChecked;
                     });
                 });
             }
 
             //SEARCH BAR (FILTERING FOODS)
-            searchInput.addEventLIstener('input', (e) => { //If there is input into the search bar, this function will run
+            searchInput.addEventListener('input', (e) => { //If there is input into the search bar, this function will run
                 const searchTerm = e.target.value.toLowerCase(); //The value of what the user typed. Lowercase so that it is case insensitive
                 const foodItems = document.querySelectorAll('.food-item') //Just gets the lsit of all the food items
                 let visibleCount = 0; //Will count the number of foods currently visible after typing in a keyword
@@ -274,6 +274,145 @@
                     foodCount.textContent = `${visible} of ${total} items`;
                 }
             }
+
+            //Clear ALL Selections
+            clearBtn.addEventListener('click', () => {
+                document.querySelectorAll('.food-checkbox:checked').forEach(cb => { // QuerySelectorALL finds ALL matching elements wherre class = food-checkbox and state = checked.
+                    cb.checked = false; //unchecks the checkbox (cb)
+                    const servingInput = cb.closest('.food-item').querySelector('.serving-input'); //Finds the closest parent with the class food-item and then finds its serving input
+                    servingInput.disabled = true; //Disables the serving Input
+                    servingInput.value = 1; //Resets the servings you ate back to 0
+                });
+                calculateBtn.disabled = true; //diables the calculate button
+                results.classList.add('hidden'); //hides results
+            });
+
+            //Calculate the Total Nutrition
+            calculateBtn.addEventListener('click', async () => {
+                const checkedBoxes = document.querySelectorAll('.food-checkbox:checked'); //finds all checked boxes
+                
+                if (checkedBoxes.length === 0) { //If there is no checked boxes
+                    alert('Please select at least one food item');
+                    return;
+                }
+
+                //List of colected selected foods with serving sizes
+                const selectedFoods = [];
+                checkedBoxes.forEach(checkbox => {
+                    const servingInput = checkbox.closest('.food-item').querySelector('.serving-input'); //gets the closest food-item to the checkbox and gets its serving input
+                    selectedFoods.push({ //.push adds an item to the end of an array
+                        name: checkbox.dataset.name,
+                        category: checkbox.dataset.category,
+                        hall: checkbox.dataset.hall,
+                        period: checkbox.dataset.period,
+                        servings: parseFloat(servingInput.value) //parseFloat turns the input value into a number
+                    });
+                });
+
+                //loading
+                loading.classList.remove('hidden');
+                results.classList.add('hidden');
+
+                try {
+                    //Fetches the nutrition for each selected food
+                    const nutritionPromises = selectedFoods.map(food => //A promise is something that will happen in the future
+                        fetch(`/api/nutrition?hall=${encodeURIComponent(food.hall)}&period=${encodeURIComponent(food.period)}&category=${encodeURIComponent(food.category)}&food=${encodeURIComponent(food.name)}`).then(res => res.json()) //takes the raw response and parses it as JSON
+                    );
+
+                    const nutritionResults = await Promise.all(nutritionPromises); //Promise.all takes an array of promises, waits for them all to be resolved, and returns a new promise that resolves to an array of the results in the same order (combines into one)
+                    
+                    //Combine with serving sizes
+                    const foodsWithNutrition = selectedFoods.map((food, index) => ({
+                        ...food,
+                        nutrition: nutritionResults[index]
+                    }));
+
+                    //Calculate and display totals
+                    displayResults(foodsWithNutrition); //helper function outside of this one.
+                } catch (error) {
+                    console.error('Error:', error);
+                    alert('Failed to calculate nutrition');
+                } finally { //runs no matter what
+                    loading.classList.add('hidden');
+                }
+            });
+
+            //DISPLAYS RESULTS
+            function displayResults(foodsWithNutrition){
+                //Display selected items
+                const selectedItemsDiv = document.getElementById('selected-items');
+                selectedItemsDiv.innerHTML = '<h3>Selected Items:</h3>';
+                const totals = {};
+                const allAllergens = new Set();
+
+                foodsWithNutrition.forEach(food => {
+                    const itemDiv = document.createElement('div');  // ← ADD THIS
+                    itemDiv.className = 'selected-item';             // ← ADD THIS
+                    
+                    itemDiv.innerHTML = `
+                        <span class="item-name">${food.name}</span>
+                        <span class="item-servings">${food.servings} serving${food.servings !== 1 ? 's' : ''}</span>
+                        <span class="item-category">${food.category}</span>
+                    `;
+                    selectedItemsDiv.appendChild(itemDiv);  // ← ADD THIS
+                });
+
+                foodsWithNutrition.forEach(food => {
+                    const servings = food.servings;
+                    const nutrition = food.nutrition;
+
+
+                    for (const [key, value] of Object.entries(nutrition)) { //Converts the object into an array of [key, value] pairs
+                        if (key === 'allergens') {
+                            if (value) {
+                                value.split(',').forEach(allergen =>
+                                    allAllergens.add(allergen.trim())
+                                );
+                            }
+                            continue;
+                        }
+
+                        if (key === 'serving_size') continue;
+
+                        const numValue = parseFloat(value);
+                        if (!isNaN(numValue)) {
+                            if (!totals[key]) totals[key] = 0;
+                            totals[key] += numValue * servings;
+                        }
+                    }
+                });
+
+                //Display nutrition grid
+                const nutritionGrid = document.getElementById('nutrition-grid');
+                nutritionGrid.innerHTML = '';
+
+                for (const [nutrient, value] of Object.entries(totals)) {
+                    const item = document.createElement('div');
+                    item.innerHTML = `
+                        <span class="nutrient-name">${nutrient}:</span>
+                        <span class="nutrient-value">${value.toFixed(2)}</span>
+                        `;
+                    nutritionGrid.appendChild(item);
+                }
+
+                //Display allergens
+                const allergensSection = document.getElementById('combined-allergens');
+                const allergensList = document.getElementById('allergens-list');
+
+                if (allAllergens.size > 0) {
+                    allergensList.textContent = Array.from(allAllergens).join(', ');
+                    allergensSection.classList.remove('hidden');
+                } else {
+                    allergensSection.classList.add('hidden');
+                }
+
+                //Show results
+                results.classList.remove('hidden');
+                results.scrollIntoView({ behavior: 'smooth', block: 'start' }); //Has the browser scroll the page so that the results element becomes visible. Smooth means it scrolls gradually and start aligns with the top of the element results
+            }
+
+
+            init();
         </script>
     </body>
 </html>
